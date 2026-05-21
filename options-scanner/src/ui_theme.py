@@ -25,6 +25,7 @@ alignment. Bull/bear/neutral always pair color with a Unicode glyph
 from __future__ import annotations
 
 from datetime import datetime
+from textwrap import dedent
 from typing import Any, Iterable
 
 import streamlit as st
@@ -97,7 +98,7 @@ def inject_theme() -> None:
     Idempotent: re-running on a rerun is safe (Streamlit replaces the markup).
     """
     st.markdown(
-        f"""
+        dedent(f"""
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <style>
@@ -663,7 +664,7 @@ def inject_theme() -> None:
             color: var(--tx-fg);
         }}
         </style>
-        """,
+        """),
         unsafe_allow_html=True,
     )
 
