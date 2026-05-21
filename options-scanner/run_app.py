@@ -19,13 +19,20 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+import ui_theme as tx
+
 _FAVICON_PATH = Path(__file__).parent / "assets" / "favicon.png"
 st.set_page_config(
-    page_title="Options Scanner",
-    page_icon=str(_FAVICON_PATH) if _FAVICON_PATH.exists() else "📈",
+    page_title="Stockpile · Options Terminal",
+    page_icon=str(_FAVICON_PATH) if _FAVICON_PATH.exists() else "▲",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# Inject the terminal theme (fonts, palette, sidebar, tables, buttons,
+# status-bar styling) and register the matching Altair chart theme.
+tx.inject_theme()
+tx.register_altair_theme()
 
 
 # ── Theme switcher ──────────────────────────────────────────────────────────
@@ -35,7 +42,7 @@ st.set_page_config(
 # to open it. None of these add vertical space to the form.
 
 THEMES: dict[str, dict[str, str] | None] = {
-    "Default":         None,
+    "Terminal":        None,   # default — trader dark theme from ui_theme
     "Sepia":           {"bg": "#f4ede0", "sec": "#ebe2d0",
                         "text": "#3d2f1f", "muted": "#7a5d3a"},
     "Solarized Light": {"bg": "#fdf6e3", "sec": "#eee8d5",
@@ -46,6 +53,10 @@ THEMES: dict[str, dict[str, str] | None] = {
 
 
 def _apply_theme(theme_name: str) -> None:
+    # "Terminal" is the default dark trader theme — inject_theme() already
+    # configured the whole palette, so we have nothing extra to inject.
+    if theme_name == "Terminal":
+        return
     cfg = THEMES.get(theme_name)
     if not cfg:
         return
@@ -187,9 +198,9 @@ def _show_validation(issues: list, row_count: int, parse_error: str | None,
 
         def _row_style(row):
             color = (
-                "background-color: rgba(239,68,68,0.18)"
+                "background-color: rgba(239,68,68,0.22)"
                 if row["Level"] == "ERROR"
-                else "background-color: rgba(234,179,8,0.22)"
+                else "background-color: rgba(245,158,11,0.22)"
             )
             return [color] * len(row)
 
@@ -290,7 +301,7 @@ def _compute_top_ranks(df: pd.DataFrame, mode: str, buy: bool,
     return ranks
 
 
-_CELL_WARN = "background-color: rgba(234,179,8,0.45)"
+_CELL_WARN = "background-color: rgba(245,158,11,0.30)"   # signal-gold tint
 _BID_HELP  = ("Yellow: spread is wider than 1.5× the median for this table"
               " — higher execution cost.")
 _OI_HELP   = ("Yellow: OI is below 2× the min OI filter"
@@ -307,7 +318,7 @@ _VOL_HELP  = "Yellow: fewer than 4 contracts traded today — very thin activity
 # the context survives screenshots, HTML exports, and Reddit reposts.
 
 _PROVIDER_LABELS = {"yahoo": "Yahoo Finance", "schwab": "Schwab"}
-_PROVIDER_COLORS = {"yahoo": "#16a34a", "schwab": "#2563eb"}  # green / blue
+_PROVIDER_COLORS = {"yahoo": "#22C55E", "schwab": "#F59E0B"}  # bull-green / signal-gold
 
 
 def _tz_abbr(ts) -> str:
@@ -362,7 +373,12 @@ def _stamp_caption() -> None:
 def _show_df(sub: pd.DataFrame, roll_close_cost: float | None = None,
              min_oi: int = 0, min_vol: int = 0) -> None:
     if sub.empty:
-        st.info("No options match the current filters.")
+        tx.empty_state(
+            "No matches",
+            "No options pass the current Min OI / Min Vol / Delta range "
+            "filters. Loosen the constraints in the controls above and "
+            "rescan.",
+        )
         return
 
     disp = pd.DataFrame({
@@ -521,12 +537,14 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
         return
 
     excess_max = max(abs(sub["IV+pp"].min()), abs(sub["IV+pp"].max()), 1.0)
-    # Green = attractive (high IV+pp to sell; low IV+pp to buy); red = unattractive.
-    # Flip the range in buy mode so the color always agrees with the table shading.
+    # Bull (green) = attractive (high IV+pp to sell; low IV+pp to buy);
+    # bear (red) = unattractive. Flip the range in buy mode so the color
+    # always agrees with the table shading. Neutral mid-tone is muted
+    # slate so the chart reads on the dark canvas.
     if buy:
-        color_range = ["#22c55e", "#cbd5e1", "#ef4444"]  # negative=green, positive=red
+        color_range = ["#22C55E", "#94A3B8", "#EF4444"]
     else:
-        color_range = ["#ef4444", "#cbd5e1", "#22c55e"]  # negative=red, positive=green
+        color_range = ["#EF4444", "#94A3B8", "#22C55E"]
     color_scale = alt.Scale(
         domain=[-excess_max, 0, excess_max],
         range=color_range,
@@ -560,7 +578,7 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
     ]
 
     fitted_line = alt.Chart(sub).mark_line(
-        color="#94a3b8", strokeDash=[4, 3], size=2,
+        color="#94A3B8", strokeDash=[4, 3], size=2, opacity=0.65,
     ).encode(
         x=base_x,
         y=alt.Y("FittedIV%:Q", title="Implied Volatility (%)"),
@@ -568,7 +586,7 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
     )
 
     background = alt.Chart(sub[~sub["is_top"]]).mark_circle(
-        size=60, opacity=1.0,
+        size=55, opacity=0.55,
     ).encode(
         x=base_x,
         y="IV%:Q",
@@ -580,8 +598,8 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
     )
 
     picks = alt.Chart(sub[sub["is_top"]]).mark_point(
-        size=260, opacity=1.0, filled=True,
-        stroke="#0f172a", strokeWidth=2,
+        size=300, opacity=1.0, filled=True,
+        stroke="#F8FAFC", strokeWidth=1.5,
     ).encode(
         x=base_x,
         y="IV%:Q",
@@ -591,12 +609,11 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
     )
 
     # Rank badge above each pick — shows where this option sits in
-    # the top-N list per type (1 = strongest signal). Same ordering
-    # as the bottom table, so the user can match chart picks to table
-    # rows at a glance.
+    # the top-N list per type (1 = strongest signal). Light text on
+    # the dark canvas reads cleanly without overlapping the marker.
     ranks = alt.Chart(sub[sub["is_top"]]).mark_text(
-        fontSize=14, dy=-20, fontWeight="bold",
-        color="#0f172a",
+        fontSize=13, dy=-22, fontWeight="bold",
+        color="#F8FAFC",
     ).encode(
         x=base_x,
         y="IV%:Q",
@@ -606,14 +623,14 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
     spot_df = pd.DataFrame({"x": [spot], "y": [y_max],
                             "label": [f"Spot ${spot:.2f}"]})
     spot_rule = alt.Chart(spot_df).mark_rule(
-        color="#0f172a", strokeDash=[3, 3], size=2,
+        color="#F59E0B", strokeDash=[3, 3], size=1.5, opacity=0.9,
     ).encode(
         x=alt.X("x:Q", scale=alt.Scale(domain=[x_min, x_max])),
         tooltip=[alt.Tooltip("x:Q", title="Spot", format="$,.2f")],
     )
     spot_label = alt.Chart(spot_df).mark_text(
         align="left", baseline="top", dx=5, dy=2,
-        color="#0f172a", fontWeight="bold", fontSize=11,
+        color="#F59E0B", fontWeight="bold", fontSize=11,
     ).encode(
         x=alt.X("x:Q", scale=alt.Scale(domain=[x_min, x_max])),
         y="y:Q",
@@ -632,8 +649,8 @@ def _show_iv_chart(df: pd.DataFrame, spot: float, mode: str,
             subtitle=_scan_stamp_text() or None,
             subtitleColor=_scan_stamp_color(),
             subtitleFontSize=11,
-            fontSize=16, fontWeight="bold", anchor="start",
-            color="#0f172a",
+            fontSize=15, fontWeight="bold", anchor="start",
+            color="#F8FAFC",
         ),
     )
     st.altair_chart(chart, use_container_width=True)
@@ -657,7 +674,12 @@ def _show_chain_table(df_exp: pd.DataFrame, buy: bool, mode: str,
                       ) -> None:
     """All options for one expiration, sorted by strike, rows shaded by IV+pp."""
     if df_exp.empty:
-        st.info("No options for this expiration after filters.")
+        tx.empty_state(
+            "No rows for this expiration",
+            "After applying the OI / Vol / Delta filters, this expiration "
+            "has no rows. Try a different expiration above or relax the "
+            "filters.",
+        )
         return
 
     df_s = df_exp.sort_values(["strike", "type"]).reset_index(drop=True)
@@ -710,13 +732,13 @@ def _show_chain_table(df_exp: pd.DataFrame, buy: bool, mode: str,
             elif i == worst_i:
                 bg = "background-color: rgba(239,68,68,0.40)"
             else:
-                bg = "background-color: rgba(100,116,139,0.18)"
+                bg = "background-color: rgba(148,163,184,0.10)"
         elif s >= _NOISE:
             bg = f"background-color: rgba(34,197,94,{s/max_pos*0.50:.2f})"
         elif s <= -_NOISE:
             bg = f"background-color: rgba(239,68,68,{abs(s)/max_neg*0.45:.2f})"
         else:
-            bg = "background-color: rgba(100,116,139,0.18)"
+            bg = "background-color: rgba(148,163,184,0.10)"
         return [bg] * len(row)
 
     # Cell-level overrides for spread, OI, and vol (applied after row bg).
@@ -834,7 +856,7 @@ def _show_gex_chart(df: pd.DataFrame, spot: float,
         color=alt.Color("color:N",
                         scale=alt.Scale(
                             domain=["Pinning", "Amplifying"],
-                            range=["#22c55e", "#ef4444"],
+                            range=["#22C55E", "#EF4444"],
                         ),
                         legend=alt.Legend(title=None)),
         tooltip=[
@@ -847,13 +869,13 @@ def _show_gex_chart(df: pd.DataFrame, spot: float,
     spot_df = pd.DataFrame({"x": [spot], "y": [y_max_gex],
                             "label": [f"Spot ${spot:.2f}"]})
     spot_rule = alt.Chart(spot_df).mark_rule(
-        color="#0f172a", strokeDash=[3, 3], strokeWidth=1.5,
+        color="#F59E0B", strokeDash=[3, 3], strokeWidth=1.5, opacity=0.9,
     ).encode(
         x=alt.X("x:Q", scale=alt.Scale(domain=[x_min, x_max])),
     )
     spot_label = alt.Chart(spot_df).mark_text(
         align="left", baseline="top", dx=5, dy=2,
-        color="#0f172a", fontWeight="bold", fontSize=11,
+        color="#F59E0B", fontWeight="bold", fontSize=11,
     ).encode(
         x=alt.X("x:Q", scale=alt.Scale(domain=[x_min, x_max])),
         y="y:Q",
@@ -886,7 +908,7 @@ def _show_gex_chart(df: pd.DataFrame, spot: float,
                 subtitleColor=_scan_stamp_color(),
                 subtitleFontSize=11,
                 fontSize=14, fontWeight="bold", anchor="start",
-                color="#0f172a",
+                color="#F8FAFC",
             ),
         ).configure_view(strokeWidth=0),
         use_container_width=True,
@@ -1052,7 +1074,7 @@ def _tab_single() -> None:
         max_dte_arg = int(max_dte_inp) if max_dte_inp > 0 else None
         delta_min, delta_max = delta_range
 
-        with st.spinner(f"Fetching {ticker_clean} option chain…"):
+        with st.spinner(tx.spinner_text("chain", ticker_clean)):
             df, earnings_dates, err = _fetch_and_enrich(
                 ticker_clean, eff_opt_fetch, int(min_dte), max_dte_arg,
                 st.session_state.get("data_source", "yahoo"),
@@ -1074,7 +1096,7 @@ def _tab_single() -> None:
             exp_yf = roll_exp.strftime("%Y-%m-%d")
             _provider = st.session_state.get("data_source", "yahoo")
             _scfg = st.session_state.get("schwab_config")
-            with st.spinner("Looking up close cost…"):
+            with st.spinner(tx.spinner_text("roll")):
                 if _provider == "schwab":
                     from stocks_shared.schwab_live import (
                         get_client, fetch_option_chain_schwab
@@ -1140,23 +1162,76 @@ def _tab_single() -> None:
     df_filt   = df_r[df_r["delta"].abs().between(
                     res["delta_min"], res["delta_max"])].copy()
     spot      = float(df_r["spot"].iloc[0])
+    ed        = res["earnings_dates"]
 
-    st.divider()
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Spot", f"${spot:.2f}")
-    m2.metric("Expirations", df_r["expiration"].nunique())
-    ed = res["earnings_dates"]
+    # ── Trader status bar ─────────────────────────────────────────────
+    # ATM IV from the closest-to-money option for a quick volatility read,
+    # plus the surface-fit RMSE (mean abs IV+pp) as a quality signal.
+    _atm_idx = (df_r["strike"] - spot).abs().idxmin()
+    _atm_iv  = float(df_r.loc[_atm_idx, "iv"]) * 100.0
+    _rmse_pp = float(df_r["iv_excess"].abs().mean() * 100.0)
+    _n_cands = int(len(df_filt))
+
+    # Earnings cell
     if ed:
-        earn_days = (ed[0] - date.today()).days
-        earn_label = f"{ed[0].strftime('%b %d')} ({earn_days}d)"
+        _earn_days = (ed[0] - date.today()).days
+        _earn_value = ed[0].strftime("%b %d")
+        _earn_delta = f"in {_earn_days}d" if _earn_days >= 0 else "passed"
+        _earn_tone = "warn" if 0 <= _earn_days <= 14 else "neutral"
     else:
-        earn_label = "unknown"
-    m3.metric("Next Earnings", earn_label)
-    st.divider()
+        _earn_value, _earn_delta, _earn_tone = "—", "no event", "neutral"
+
+    # IV regime — relative tagging by ATM IV magnitude. Conservative
+    # bands so we don't over-claim.
+    if _atm_iv >= 60:
+        _regime, _regime_tone = "ELEVATED", "bear"
+    elif _atm_iv >= 30:
+        _regime, _regime_tone = "NORMAL", "neutral"
+    else:
+        _regime, _regime_tone = "COMPRESSED", "bull"
+
+    # Action recommended cell (gold accent — primary action)
+    _action = ("BUY (IV-CHEAP)" if buy_r else "SELL (IV-RICH)") \
+              if rcc is None else f"ROLL {(res['roll_type'] or '').upper()}"
+
+    tx.status_bar([
+        {"label": "TICKER", "value": ticker_r, "anchor": True, "big": True,
+         "tone": "neutral"},
+        {"label": "SPOT", "value": f"${spot:,.2f}", "big": True,
+         "delta": f"{tx.GLYPH_DOT} {df_r['expiration'].nunique()} exps",
+         "tone": "neutral"},
+        {"label": "ATM IV", "value": f"{_atm_iv:.1f}%",
+         "delta": f"regime {_regime}", "tone": _regime_tone},
+        {"label": "SURFACE FIT",
+         "value": f"±{_rmse_pp:.2f}pp",
+         "delta": "rmse |IV+pp|",
+         "tone": "neutral"},
+        {"label": "CANDIDATES", "value": f"{_n_cands:,}",
+         "delta": f"of {len(df_r):,} chain rows",
+         "tone": "neutral"},
+        {"label": "ACTION", "value": _action,
+         "delta": _earn_delta if ed else "",
+         "tone": "warn" if rcc is None else "accent"},
+        {"label": "NEXT EARN", "value": _earn_value,
+         "delta": _earn_delta, "tone": _earn_tone},
+    ])
 
     if rcc is not None:
-        st.info(f"Rolling {res['roll_type']} ${res['roll_strike']:.0f} "
-                f"{res['roll_exp_str']} — close cost (mid): **${rcc:.2f}**")
+        st.markdown(
+            f'<div style="background:rgba(139,92,246,0.10); '
+            f'border:1px solid rgba(139,92,246,0.35); '
+            f'border-radius:8px; padding:0.55rem 0.85rem; '
+            f'margin: 0.25rem 0 0.5rem; '
+            f'font-family:var(--tx-font-mono); font-size:0.85rem; '
+            f'color:var(--tx-fg);">'
+            f'{tx.pill("ROLL", "accent")}&nbsp;&nbsp;'
+            f'{res["roll_type"]} ${res["roll_strike"]:.0f} '
+            f'{res["roll_exp_str"]} · close mid '
+            f'<span style="color:var(--tx-primary); font-weight:600;">'
+            f'${rcc:.2f}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     # Floating rescan button — CSS pins it to the top header bar next to
     # the logo so it stays visible at every scroll position. Lets the
@@ -1172,10 +1247,12 @@ def _tab_single() -> None:
             st.session_state["_rescan_trigger"] = True
             st.rerun()
 
+    tx.divider("Volatility surface")
     _show_iv_chart(df_filt, spot, mode_r, res["min_oi"], res["top_n"],
                    buy_r, ticker=ticker_r, key_prefix="s",
                    min_vol=res.get("min_vol", 0))
 
+    tx.divider("Gamma exposure")
     _show_gex_chart(df_r, spot,
                     provider=st.session_state.get("scan_provider", "yahoo"),
                     ticker=ticker_r)
@@ -1191,10 +1268,11 @@ def _tab_single() -> None:
             next_earn   = min(earn_before)
             earn_days   = (next_earn - date.today()).days
             earn_lbl    = next_earn.strftime("%b %d")
-            chain_title = f"{exp_lbl} — next earnings {earn_lbl} ({earn_days}d)"
+            chain_title = (f"Chain — {exp_lbl}  "
+                           f"· next earn {earn_lbl} ({earn_days}d)")
         else:
-            chain_title = exp_lbl
-        st.subheader(chain_title)
+            chain_title = f"Chain — {exp_lbl}"
+        tx.divider(chain_title)
         top_ranks = _compute_top_ranks(
             df_filt, mode_r, buy_r, res["min_oi"], res["top_n"],
             res.get("min_vol", 0),
@@ -1202,7 +1280,7 @@ def _tab_single() -> None:
         _show_chain_table(df_chain, buy_r, mode_r, rcc, res["min_oi"],
                           res.get("min_vol", 0), top_ranks=top_ranks)
 
-    st.subheader("Top candidates — all chains")
+    tx.divider("Top candidates — all chains")
     _show_scan_results(df_filt, mode_r, buy_r, rcc,
                        res["min_oi"], res["top_n"],
                        res.get("min_vol", 0))
@@ -1218,6 +1296,16 @@ def _tab_single() -> None:
         file_name=f"{ticker_r}_{type_tag}_{action_tag}_{date.today().strftime('%Y%m%d')}.html",
         mime="text/html",
         key="s_download",
+    )
+
+    # ── Status footer ─────────────────────────────────────────────────
+    _prov = st.session_state.get("scan_provider", "yahoo")
+    tx.status_footer(
+        provider_label=_PROVIDER_LABELS.get(_prov, _prov),
+        scan_ts_str=_scan_stamp_text(),
+        tone="bull" if _prov == "yahoo" else "gold",
+        extra=f"TICKER {ticker_r} · {_n_cands:,} CAND · "
+              f"{df_r['expiration'].nunique()} EXP",
     )
 
     with st.expander("Column & color key"):
@@ -1348,12 +1436,15 @@ def _tab_portfolio() -> None:
         st.success(f"Found {len(positions)} position(s): "
                    f"{', '.join(p['ticker'] for p in positions)}")
 
-        progress = st.progress(0, text="Scanning…")
+        progress = st.progress(0, text=tx.spinner_text("portfolio"))
         results = []
         for i, pos in enumerate(positions):
             ticker = pos["ticker"]
-            progress.progress((i + 1) / len(positions),
-                              text=f"Scanning {ticker} ({i+1}/{len(positions)})…")
+            progress.progress(
+                (i + 1) / len(positions),
+                text=f"scanning chain… {ticker} "
+                     f"[{i+1}/{len(positions)}]",
+            )
 
             df, earnings_dates, err = _fetch_position(
                 ticker, int(port_min_dte), _provider, _scfg
@@ -1421,7 +1512,8 @@ def _tab_portfolio() -> None:
         pos    = res["position"]
         ticker = pos["ticker"]
         covered = bool(pos["open_calls"])
-        label  = f"{ticker} — {pos['shares']} shares — {'Covered' if covered else 'Uncovered'}"
+        label = (f"{ticker}  ·  {pos['shares']} sh  ·  "
+                 f"{'COVERED' if covered else 'UNCOVERED'}")
 
         with st.expander(label, expanded=True):
             if res["error"]:
@@ -1433,25 +1525,63 @@ def _tab_portfolio() -> None:
             df             = res["df"]
 
             if spot is None or df.empty:
-                st.warning("No options data returned — Yahoo may be "
-                           "throttling. Try again in a moment.")
+                tx.empty_state(
+                    "No options data returned",
+                    "The provider may be throttling. Try again in a "
+                    "moment — or switch the data source toggle in the "
+                    "header bar.",
+                )
                 continue
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Spot", f"${spot:.2f}")
-            m2.metric("Expirations", df["expiration"].nunique())
+            # Trader status bar for this position
             if earnings_dates:
-                earn_days = (earnings_dates[0] - date.today()).days
-                earn_label = f"{earnings_dates[0].strftime('%b %d')} ({earn_days}d)"
+                _ed = earnings_dates[0]
+                _ed_days = (_ed - date.today()).days
+                _ed_value = _ed.strftime("%b %d")
+                _ed_delta = f"in {_ed_days}d"
+                _ed_tone = "warn" if 0 <= _ed_days <= 14 else "neutral"
             else:
-                earn_label = "unknown"
-            m3.metric("Next Earnings", earn_label)
+                _ed_value, _ed_delta, _ed_tone = "—", "no event", "neutral"
+
+            tx.status_bar([
+                {"label": "TICKER", "value": ticker,
+                 "anchor": True, "big": True, "tone": "neutral"},
+                {"label": "SPOT", "value": f"${spot:,.2f}", "big": True,
+                 "delta": f"{df['expiration'].nunique()} exps",
+                 "tone": "neutral"},
+                {"label": "SHARES", "value": f"{pos['shares']:,}",
+                 "delta": "covered" if covered else "uncovered",
+                 "tone": "bull" if covered else "neutral"},
+                {"label": "OPEN CALLS",
+                 "value": str(len(pos.get("open_calls", []))),
+                 "delta": "short legs", "tone": "accent" if covered else "neutral"},
+                {"label": "NEXT EARN", "value": _ed_value,
+                 "delta": _ed_delta, "tone": _ed_tone},
+            ])
 
             for opt in pos["open_calls"]:
                 close = res["roll_close_costs"].get(opt["symbol"])
-                close_str = f" — close mid: **${close:.2f}**" if close else ""
-                st.info(f"Open call: **{opt['symbol']}** "
-                        f"({opt['contracts']} contract(s)){close_str}")
+                close_html = (
+                    f' · close mid <span style="color:var(--tx-primary); '
+                    f'font-weight:600;">${close:.2f}</span>'
+                    if close else ""
+                )
+                st.markdown(
+                    f'<div style="background:rgba(34,39,53,0.7); '
+                    f'border:1px solid var(--tx-border); '
+                    f'border-left:3px solid var(--tx-accent); '
+                    f'border-radius:6px; padding:0.45rem 0.75rem; '
+                    f'margin:0.35rem 0; font-family:var(--tx-font-mono); '
+                    f'font-size:0.84rem; color:var(--tx-fg);">'
+                    f'{tx.pill("SHORT CALL", "accent")}&nbsp;&nbsp;'
+                    f'<span style="font-weight:600;">{opt["symbol"]}</span> '
+                    f'<span style="color:var(--tx-muted-fg);">'
+                    f'· {opt["contracts"]} contract'
+                    f'{"s" if opt["contracts"] != 1 else ""}</span>'
+                    f'{close_html}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
             roll_close = None
             if pos["open_calls"]:
@@ -1462,11 +1592,12 @@ def _tab_portfolio() -> None:
             df_filt = df[df["delta"].abs().between(
                 port_delta_min, port_delta_max)].copy()
 
+            tx.divider("Volatility surface")
             _show_iv_chart(df_filt, spot, "call",
                            int(port_min_oi), int(port_top), False,
                            ticker=ticker, key_prefix=f"p_{ticker}")
 
-            st.markdown("**Top candidates**")
+            tx.divider("Top candidates")
             _show_scan_results(df_filt, "call", False, roll_close,
                                int(port_min_oi), int(port_top))
 
@@ -1480,6 +1611,15 @@ def _tab_portfolio() -> None:
         data=port_html.encode("utf-8"),
         file_name=f"portfolio_{date.today().strftime('%Y%m%d')}.html",
         mime="text/html",
+    )
+
+    # ── Status footer ─────────────────────────────────────────────────
+    _prov = st.session_state.get("scan_provider", "yahoo")
+    tx.status_footer(
+        provider_label=_PROVIDER_LABELS.get(_prov, _prov),
+        scan_ts_str=_scan_stamp_text(),
+        tone="bull" if _prov == "yahoo" else "gold",
+        extra=f"PORTFOLIO {uploaded_name} · {len(results)} POS",
     )
 
 
@@ -1511,16 +1651,16 @@ def _show_payoff_chart(row: pd.Series, spot: float) -> None:
 
     # Shaded area: green above 0, red below 0 — use two area layers
     zero_line = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
-        color="#475569", strokeDash=[3, 3], size=1
+        color="#94A3B8", strokeDash=[3, 3], size=1, opacity=0.55,
     ).encode(y="y:Q")
 
     spot_rule = alt.Chart(pd.DataFrame({"x": [spot]})).mark_rule(
-        color="#0f172a", strokeDash=[4, 4], size=1.5
+        color="#F59E0B", strokeDash=[4, 4], size=1.5, opacity=0.9,
     ).encode(x="x:Q")
 
-    # Breakeven rules
+    # Breakeven rules — accent purple (used sparingly per palette guidance)
     be_rules = []
-    for be_col, color in [("breakeven1", "#f97316"), ("breakeven2", "#f97316")]:
+    for be_col, color in [("breakeven1", "#8B5CF6"), ("breakeven2", "#8B5CF6")]:
         be_val = row.get(be_col)
         if be_val and not pd.isna(be_val):
             be_rules.append(
@@ -1531,7 +1671,7 @@ def _show_payoff_chart(row: pd.Series, spot: float) -> None:
 
     color_scale = alt.Scale(
         domain=["At Expiration", "Current Value (BS)"],
-        range=["#0f172a", "#94a3b8"],
+        range=["#F8FAFC", "#94A3B8"],
     )
     dash_scale = alt.Scale(
         domain=["At Expiration", "Current Value (BS)"],
@@ -1562,7 +1702,7 @@ def _show_payoff_chart(row: pd.Series, spot: float) -> None:
             subtitleColor=_scan_stamp_color(),
             subtitleFontSize=11,
             fontSize=14, fontWeight="bold",
-            anchor="start", color="#0f172a",
+            anchor="start", color="#F8FAFC",
         ),
     )
     st.altair_chart(chart, use_container_width=True)
@@ -1637,11 +1777,11 @@ def _show_spreads_table(sub: pd.DataFrame, strategy_name: str,
         pop = float(orig["pop"])
         rr = float(orig["risk_reward"])
         if pt and pv:
-            bg = "background-color: rgba(34,197,94,0.30); outline: 2px solid #16a34a"
+            bg = "background-color: rgba(34,197,94,0.32); outline: 2px solid #22C55E"
         elif pop >= 0.65 and rr >= 0.20:
             bg = "background-color: rgba(34,197,94,0.18)"
         elif pop >= 0.55 and rr >= 0.10:
-            bg = "background-color: rgba(234,179,8,0.22)"
+            bg = "background-color: rgba(245,158,11,0.18)"
         else:
             bg = ""
         return [bg] * len(row)
@@ -1652,7 +1792,7 @@ def _show_spreads_table(sub: pd.DataFrame, strategy_name: str,
     styled = disp.style.apply(_row_style, axis=1)
     if any(earnings_mask) and "Earnings" in disp.columns:
         styled = styled.apply(
-            lambda _: ["background-color: rgba(249,115,22,0.35)"
+            lambda _: ["background-color: rgba(245,158,11,0.40)"
                        if earnings_mask[i] else ""
                        for i in range(len(disp))],
             subset=["Earnings"],
@@ -1814,7 +1954,7 @@ def _render_spreads_view(
             st.error("Select at least one strategy.")
             return
 
-        with st.spinner(f"Fetching {ticker_clean} option chain…"):
+        with st.spinner(tx.spinner_text("chain", ticker_clean)):
             df, earnings_dates, err = _fetch_and_enrich(
                 ticker_clean, "both", int(min_dte), int(max_dte),
                 st.session_state.get("data_source", "yahoo"),
@@ -1830,7 +1970,7 @@ def _render_spreads_view(
             st.session_state.pop(session_key, None)
             return
 
-        with st.spinner("Building spreads…"):
+        with st.spinner(tx.spinner_text("spreads")):
             results_df, errors = scan_spreads(
                 df,
                 strategies=selected_strategies,
@@ -1884,18 +2024,31 @@ def _render_spreads_view(
             st.session_state[rescan_flag] = True
             st.rerun()
 
-    st.divider()
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Spot", f"${spot:.2f}")
-    m2.metric("Spreads found", len(df_r))
     ed = res["earnings_dates"]
     if ed:
-        earn_days = (ed[0] - date.today()).days
-        earn_label = f"{ed[0].strftime('%b %d')} ({earn_days}d)"
+        _ed_days = (ed[0] - date.today()).days
+        _ed_value = ed[0].strftime("%b %d")
+        _ed_delta = f"in {_ed_days}d"
+        _ed_tone = "warn" if 0 <= _ed_days <= 14 else "neutral"
     else:
-        earn_label = "unknown"
-    m3.metric("Next Earnings", earn_label)
-    st.divider()
+        _ed_value, _ed_delta, _ed_tone = "—", "no event", "neutral"
+
+    _n_strats = len({s for s in df_r["strategy"]}) if not df_r.empty else 0
+
+    tx.status_bar([
+        {"label": "TICKER", "value": ticker_r, "anchor": True, "big": True,
+         "tone": "neutral"},
+        {"label": "SPOT", "value": f"${spot:,.2f}", "big": True,
+         "tone": "neutral"},
+        {"label": "SPREADS", "value": f"{len(df_r):,}",
+         "delta": f"across {_n_strats} strats",
+         "tone": "bull" if len(df_r) > 0 else "bear"},
+        {"label": "MIN POP",
+         "value": f"{res.get('min_pop_pct', 0)}%",
+         "delta": "filter floor", "tone": "neutral"},
+        {"label": "NEXT EARN", "value": _ed_value,
+         "delta": _ed_delta, "tone": _ed_tone},
+    ])
 
     if df_r.empty:
         delta_hint = (f", |Δ| ≤ {res['max_abs_delta']:.2f}"
@@ -1962,6 +2115,15 @@ def _render_spreads_view(
 | Orange Earn cell | Earnings before expiration — IV may spike unpredictably. |
 """)
 
+    # ── Status footer ─────────────────────────────────────────────────
+    _prov = st.session_state.get("scan_provider", "yahoo")
+    tx.status_footer(
+        provider_label=_PROVIDER_LABELS.get(_prov, _prov),
+        scan_ts_str=_scan_stamp_text(),
+        tone="bull" if _prov == "yahoo" else "gold",
+        extra=f"{tab_label.upper()} · {ticker_r} · {len(df_r):,} ROWS",
+    )
+
 
 def _tab_spreads() -> None:
     """Power-user view — all 13 spread strategies available."""
@@ -2012,38 +2174,14 @@ def _tab_neutral() -> None:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-# Layout tweaks: tighten the header→tabs gap; keep the collapsed-sidebar
-# toggle visible (soft pill background + forced color so it shows on any
-# theme, including Dim/Sepia).
+# Layout-only tweaks. The global palette / typography / sidebar / table /
+# button styling lives in ui_theme.inject_theme() (called near the top of
+# the script). What remains here is just position-sensitive scaffolding:
+# the input width cap, the floating header pills, and the sidebar toggle
+# visibility override — concerns the theme module deliberately stays out of.
 st.markdown(
     """
     <style>
-    .block-container {
-        padding-top: 1rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-    }
-
-    [data-testid="stDivider"] {
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
-    }
-    [data-testid="stDivider"] hr {
-        margin-top: 0.15rem !important;
-        margin-bottom: 0.15rem !important;
-    }
-
-    /* Compact metric cards — Streamlit's default value font is ~2rem, way
-       too big for our header row. */
-    [data-testid="stMetricValue"] {
-        font-size: 1.25rem !important;
-    }
-    [data-testid="stMetricLabel"] {
-        font-size: 0.85rem !important;
-    }
-
     /* Cap number-input widths so the form doesn't look like an enterprise
        intake form. The number itself rarely needs more than 7rem; the
        column still controls horizontal position, the input just doesn't
@@ -2053,54 +2191,24 @@ st.markdown(
     }
 
     /* Nudge the Top N input right so it lines up vertically with Min OI
-       in the row above. Both rows now have 5 columns / 4 gaps (filter:
-       Min DTE / Max DTE / Min OI / Min Vol / warning; scan: Delta /
-       Top N / spacer / Scan / spacer), so the offset between Top N and
-       Min OI is exactly one column-gap (~1rem). */
+       in the row above. */
     [class*="st-key-top_n_align"] {
         padding-left: 1rem;
     }
 
-    /* Lift the Scan button a few pixels above the row's bottom baseline
-       so it sits even with the visual middle of the Top N input rather
-       than flush with the input's bottom edge. The left padding nudges
-       the button ~10px right of its column's left edge so it lines up
-       under the orange warning text rather than flush-left in the column. */
+    /* Lift the Scan button a few pixels above the row's bottom baseline. */
     [class*="st-key-scan_btn_lift"] {
         margin-bottom: 4px;
         padding-left: 10px;
     }
 
-    /* Primary (Scan) button — orange fallback so it stands out on every
-       theme even before the data-source-aware override (green = Yahoo,
-       blue = Schwab) is injected below. White text always, since the
-       overriding background color is dark on every variant. */
-    .stButton > button[kind="primary"],
-    button[data-testid="stBaseButton-primary"] {
-        background-color: #f97316 !important;
-        color: #ffffff !important;
-        border-color: #f97316 !important;
-    }
-    .stButton > button[kind="primary"] p,
-    button[data-testid="stBaseButton-primary"] p {
-        color: #ffffff !important;
-    }
-    .stButton > button[kind="primary"]:hover,
-    button[data-testid="stBaseButton-primary"]:hover {
-        background-color: #ea580c !important;
-        border-color: #ea580c !important;
-        color: #ffffff !important;
-    }
-
-    /* Sidebar toggle, both states. In Streamlit 1.57:
-         close button (<<) — wrapped in [data-testid="stSidebarCollapseButton"]
-         open  button (>>) — the button itself is [data-testid="stExpandSidebarButton"]
-       The icon is a Material Icons font glyph, so it inherits `color`
-       from the parent (no SVG fill needed). */
+    /* Sidebar toggle, both states. Translucent dark pill instead of the
+       prior white-on-light treatment, so it reads on the dark canvas
+       without blowing out the header. */
     [data-testid="stSidebarCollapseButton"] button,
     button[data-testid="stExpandSidebarButton"] {
-        background: #ffffff !important;
-        border: 2px solid #1e293b !important;
+        background: rgba(15, 23, 42, 0.85) !important;
+        border: 1px solid #334155 !important;
         border-radius: 0.5rem !important;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
         z-index: 999992 !important;
@@ -2109,17 +2217,11 @@ st.markdown(
     }
     [data-testid="stSidebarCollapseButton"] *,
     button[data-testid="stExpandSidebarButton"] * {
-        color: #1e293b !important;
+        color: #F8FAFC !important;
     }
 
     /* Floating rescan button — pinned to the top header bar just right
-       of the logo (logo is ~12rem wide starting at 5rem, so it spans
-       5rem–17rem when the sidebar is collapsed). Tracks the favicon's
-       sidebar-shift via the same data-sidebar-open observer.
-       Streamlit 1.57 adds `st-key-<key>` to a container's wrapping div;
-       we use a substring match so the same rule covers every tab's pill
-       (rescan_pill_single, rescan_pill_sp, rescan_pill_dir,
-       rescan_pill_nu). Only one is visible at a time because Streamlit
+       of the logo. One rule covers every tab's pill because Streamlit
        hides inactive tab panels via display:none. */
     [class*="st-key-rescan_pill"] {
         position: fixed;
@@ -2137,13 +2239,11 @@ st.markdown(
         min-height: 2.5rem;
         border-radius: 0.5rem !important;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-        font-weight: 600;
+        font-weight: 700;
     }
 
     /* Data source segmented control — pinned just right of the rescan
-       pill, with the rescan slot reserved (~12rem) even when no scan
-       has been run so the toggle doesn't shift around when results
-       appear. Tracks the favicon's sidebar shift via data-sidebar-open. */
+       pill. */
     [class*="st-key-data_source_pill"] {
         position: fixed;
         top: 13px;
@@ -2156,14 +2256,16 @@ st.markdown(
         left: 45rem;
     }
     [class*="st-key-data_source_pill"] [data-testid="stSegmentedControl"] {
-        background: rgba(255, 255, 255, 0.85);
+        background: rgba(34, 39, 53, 0.95);
+        border: 1px solid #334155;
         border-radius: 0.5rem;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
     }
     [class*="st-key-data_source_pill"] button {
         padding: 0.25rem 0.75rem !important;
         min-height: 2.5rem;
         font-weight: 500;
+        color: #F8FAFC !important;
     }
     </style>
     """,
@@ -2190,50 +2292,38 @@ if "data_source_choice" not in st.session_state:
         "schwab" if (_cfg_provider == "schwab" and _schwab_configured) else "yahoo"
     )
 
-# Primary (Scan) button color tracks the data-source dropdown live: green
-# for Yahoo Finance, blue for Schwab. Reads the widget key
-# (`data_source_choice`) — NOT the effective `data_source` — for two
-# reasons: (1) Streamlit populates widget-key session state BEFORE the
-# rerun begins, so the CSS at script-top sees the new value on the same
-# rerun the user changed the dropdown; (2) clicking the Scan button doesn't
-# change the dropdown, so the button color stays put across scans.
-_BTN_COLORS = {
-    "yahoo":  ("#16a34a", "#15803d"),   # normal, hover
-    "schwab": ("#2563eb", "#1d4ed8"),
-}
-_btn_bg, _btn_hover = _BTN_COLORS.get(
-    st.session_state.get("data_source_choice", "yahoo"),
-    _BTN_COLORS["yahoo"],
+# Data-source provenance is communicated through the active-state styling
+# of the segmented control in the header (and the colored LED in the
+# status footer) rather than the primary button color. The Scan button
+# stays gold — that's the brand action color.
+#
+# We DO map data source → an active-state accent (green for Yahoo, gold
+# for Schwab/live) so users get a glanceable cue of which provider is
+# live without staring at the segmented-control text.
+_DS_ACCENT = {"yahoo": "#22C55E", "schwab": "#F59E0B"}
+_ds_color = _DS_ACCENT.get(
+    st.session_state.get("data_source_choice", "yahoo"), "#22C55E"
 )
 st.markdown(
     f"""
     <style>
-    .stButton > button[kind="primary"],
-    button[data-testid="stBaseButton-primary"] {{
-        background-color: {_btn_bg} !important;
-        border-color: {_btn_bg} !important;
-    }}
-    .stButton > button[kind="primary"]:hover,
-    button[data-testid="stBaseButton-primary"]:hover {{
-        background-color: {_btn_hover} !important;
-        border-color: {_btn_hover} !important;
-    }}
-    /* Active button in the data-source pill picks up the same green
-       (yahoo) / blue (schwab) accent — outline + text, neutral
-       background. Streamlit marks the active button differently
-       across versions; selectors cover aria-pressed, aria-selected,
-       and any data-testid suffix containing "Active". */
+    /* Active button in the data-source pill picks up the data-source
+       accent — outline + text, neutral background. Streamlit marks the
+       active button differently across versions; selectors cover
+       aria-pressed, aria-selected, and any data-testid suffix
+       containing "Active". */
     [class*="st-key-data_source_pill"] button[aria-pressed="true"],
     [class*="st-key-data_source_pill"] button[aria-selected="true"],
     [class*="st-key-data_source_pill"] button[data-testid*="Active"] {{
-        color: {_btn_bg} !important;
-        border-color: {_btn_bg} !important;
-        box-shadow: inset 0 0 0 1px {_btn_bg} !important;
+        color: {_ds_color} !important;
+        border-color: {_ds_color} !important;
+        box-shadow: inset 0 0 0 1px {_ds_color} !important;
+        background: rgba(15, 23, 42, 0.6) !important;
     }}
     [class*="st-key-data_source_pill"] button[aria-pressed="true"] p,
     [class*="st-key-data_source_pill"] button[aria-selected="true"] p,
     [class*="st-key-data_source_pill"] button[data-testid*="Active"] p {{
-        color: {_btn_bg} !important;
+        color: {_ds_color} !important;
     }}
     </style>
     """,
@@ -2349,20 +2439,42 @@ else:
 st.session_state["data_source"] = data_source
 st.session_state["schwab_config"] = _cfg_schwab if data_source == "schwab" else None
 
-# Sidebar: theme only for now. Reserved for future settings.
+# Sidebar — collapses to a thin rail. Grouped under uppercase tiny-caps
+# section labels (rendered via ui_theme's .tx-rail-section class).
 with st.sidebar:
-    st.markdown("**Theme**")
+    st.markdown(
+        "<div style='font-family:var(--tx-font-sans); font-weight:700; "
+        "letter-spacing:0.18em; font-size:0.78rem; color:var(--tx-primary); "
+        "padding: 0.1rem 0 0.4rem;'>"
+        "▲ STOCKPILE · TERMINAL</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="tx-rail-section">Display</div>',
+                unsafe_allow_html=True)
     theme_choice = st.radio(
         "Theme",
         list(THEMES.keys()),
-        index=list(THEMES.keys()).index("Sepia"),
+        index=list(THEMES.keys()).index("Terminal"),
         key="theme_choice",
         label_visibility="collapsed",
     )
     st.caption(
-        "Custom themes here override Streamlit's built-in Light/Dark "
-        "via injected CSS. Pick *Default* to fall back to Streamlit's "
-        "own theme (also configurable in the three-dot menu → Settings)."
+        "Terminal is the default — dark, monospace numbers, dense rows. "
+        "The other themes override the dark base with a lighter palette "
+        "via injected CSS for users who prefer reduced contrast."
+    )
+
+    st.markdown('<div class="tx-rail-section">Session</div>',
+                unsafe_allow_html=True)
+    _ts = st.session_state.get("scan_ts")
+    _ts_display = _ts.strftime("%Y-%m-%d %H:%M") if _ts else "no scan yet"
+    st.markdown(
+        f"<div style='font-family:var(--tx-font-mono); font-size:0.78rem; "
+        f"color:var(--tx-muted-fg);'>"
+        f"Last scan: <span style='color:var(--tx-fg)'>{_ts_display}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
     )
 _apply_theme(theme_choice)
 
