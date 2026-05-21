@@ -97,7 +97,7 @@ def inject_theme() -> None:
     Call once near the top of the Streamlit script, after st.set_page_config.
     Idempotent: re-running on a rerun is safe (Streamlit replaces the markup).
     """
-    st.markdown(
+    st.html(
         dedent(f"""
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -664,8 +664,7 @@ def inject_theme() -> None:
             color: var(--tx-fg);
         }}
         </style>
-        """),
-        unsafe_allow_html=True,
+        """)
     )
 
 
