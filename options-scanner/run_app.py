@@ -61,7 +61,7 @@ def _apply_theme(theme_name: str) -> None:
     if not cfg:
         return
     bg, sec, text, muted = cfg["bg"], cfg["sec"], cfg["text"], cfg["muted"]
-    st.markdown(
+    st.html(
         f"""
         <style>
         [data-testid="stAppViewContainer"], .main, body {{
@@ -117,8 +117,7 @@ def _apply_theme(theme_name: str) -> None:
             background-color: {sec};
         }}
         </style>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
 
@@ -2179,7 +2178,7 @@ def _tab_neutral() -> None:
 # the script). What remains here is just position-sensitive scaffolding:
 # the input width cap, the floating header pills, and the sidebar toggle
 # visibility override — concerns the theme module deliberately stays out of.
-st.markdown(
+st.html(
     """
     <style>
     /* Cap number-input widths so the form doesn't look like an enterprise
@@ -2268,8 +2267,7 @@ st.markdown(
         color: #F8FAFC !important;
     }
     </style>
-    """,
-    unsafe_allow_html=True,
+    """
 )
 
 # Load config and seed data_source_choice into session_state BEFORE the
@@ -2304,7 +2302,7 @@ _DS_ACCENT = {"yahoo": "#22C55E", "schwab": "#F59E0B"}
 _ds_color = _DS_ACCENT.get(
     st.session_state.get("data_source_choice", "yahoo"), "#22C55E"
 )
-st.markdown(
+st.html(
     f"""
     <style>
     /* Active button in the data-source pill picks up the data-source
@@ -2326,8 +2324,7 @@ st.markdown(
         color: {_ds_color} !important;
     }}
     </style>
-    """,
-    unsafe_allow_html=True,
+    """
 )
 
 # App logo overlaid on Streamlit's top header bar. Sits to the right of the
@@ -2343,7 +2340,7 @@ try:
 except OSError:
     _LOGO_DATA_URI = ""
 if _LOGO_DATA_URI:
-    st.markdown(
+    st.html(
         f"""
         <style>
         /* Default position: sidebar collapsed, logo sits just to the right
@@ -2373,8 +2370,7 @@ if _LOGO_DATA_URI:
           <img src='{_LOGO_DATA_URI}' alt='Stockpile Option Scanner'
                style='height:2.5rem; width:auto;' />
         </div>
-        """,
-        unsafe_allow_html=True,
+        """
     )
 
     # Sidebar-state observer: watches the actual sidebar element's rendered
